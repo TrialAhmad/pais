@@ -3,20 +3,21 @@ import axios from "axios";
 import qs from 'querystring'
 import { Mutex } from "async-mutex";
 import { Sema } from "async-sema";
-/* import { dirname } from "path";
-import { fileURLToPath } from "url"; */
 
 //dependcies inside
 import patient from "./patient.js";
 import ResourceManager from './ResourcenManager.js';
-import durations, {setIntake, getNextIntake } from "./intakeManager.js";
+import durations, { setIntake, getNextIntake } from "./intakeManager.js";
 import { timeConsumptionArray } from './timeConsumptionData.js';
 import { norm } from 'mathjs';
 import { log } from "console";
 
+/* ToDos:
+    - Genric/Outsource gets treatment to the cpee
+    - Generic Timefactor
+    - Generic timeConsumptionData
 
-/* const __dirname = dirname(fileURLToPath(import.meta.url));
-res.sendFile(__dirname + "/public/index.html"); */
+*/
 
 const app = express();
 const port = 12793;
@@ -36,7 +37,6 @@ const resources = {
     nurse_B: 40,
     emDepartment: 9,
 };
-const resourceManager = new ResourceManager(resources);
 
 //Middleware
 app.use((req, res, next) => {
@@ -76,7 +76,7 @@ async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-app.get("/getReport", async (req, res) => {
+async function getReport(req, res) {
     console.log("Recource Report");
     res.send({
         "intake": resources.intake,
@@ -84,9 +84,8 @@ app.get("/getReport", async (req, res) => {
         "nurse_A": resources.nurse_A,
         "nurse_B": resources.nurse_B,
         "emDepartment": resources.emDepartment,
-    }
-    );
-});
+    });
+};
 
 app.post("/startHospital", async (req, res) => {
     const url = 'https://cpee.org/flow/start/url/';
@@ -127,10 +126,18 @@ app.post("/role", async (req, res) => {
         replan(req, res);
     } else if (role == 'release') {
         release(req, res);
+    } else if (role == 'getReport') {
+        getReport(req, res);
     } else {
         res.status(404).send('Funktion nicht gefunden');
     }
 });
+
+async function setRes(req, res) {
+    res.send({ "released": true });
+    beforeNurSur--;
+    console.log("Infront of Surg/Nurs Minus: " + beforeNurSur);
+};
 
 async function release(req, res) {
     res.send({ "released": true });
@@ -148,7 +155,7 @@ async function replan(req, res) {
         " diagnosis " + diagnosis);
     /*  console.log(" admissionTime " + patientArray[patientId].admissionTime); */
 
-    const initData = { patientId: patientId, diagnosis: diagnosis, admissionTime: 0, nextAvailableTime: getNextIntake()};
+    const initData = { patientId: patientId, diagnosis: diagnosis, admissionTime: 0, nextAvailableTime: getNextIntake() };
     const url = 'https://cpee.org/flow/start/url/';
     const data = {
         behavior: 'fork_running',
@@ -280,9 +287,12 @@ async function admitPatient(req, res) {
     const em = req.body["em"];
     console.log(req.body);
 
-
-    if (checkPatientExists(checkedId)) {
-
+    if(req.body.setReources){
+       resources = req.body.resources
+       timeFactor = req.timeFactor;
+       res.send(200);
+    }
+    else if (checkPatientExists(checkedId)) {
         if (em == "true") { //Has ID and Emergency goes to EM
             res.send({
                 "patientId": checkedId, "getsTreatment": true,
@@ -291,7 +301,7 @@ async function admitPatient(req, res) {
         } else {
             const resourceName = 0;
             const release = await mutex.acquire(); //Max nur 1 Thread wegen counter and check
-            
+
             console.log(durations[0]);
             if (resources.intake > 0 || beforeNurSur <= 2) {//Has ID goes to Intake
                 resources.intake--;
@@ -308,8 +318,8 @@ async function admitPatient(req, res) {
             else {
                 release();
                 console.log("Has ID & gets NO Treatment"); //Goes Home
-                res.send({ "patientId": checkedId, "getsTreatment": false, "nextAvailableTime": getNextIntake()});
-                
+                res.send({ "patientId": checkedId, "getsTreatment": false, "nextAvailableTime": getNextIntake() });
+
                 /*  res.send({ "patientId": checkedId, "em": em,  "admissionTime": 0 }); */
             }
         }

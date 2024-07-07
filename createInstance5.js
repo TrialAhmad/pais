@@ -51,7 +51,7 @@ async function replan(req, res) {
     };
     const formData = qs.stringify(data);
         
-    for (let i = 0; i < 1; i++) {
+    for (let i = 0; i < 4; i++) {
         try {
             const response = await axios.post(url, formData, {
                 headers: {

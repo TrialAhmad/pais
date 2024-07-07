@@ -3,30 +3,38 @@ import axios from "axios";
 import qs from 'querystring'
 import { Mutex } from "async-mutex";
 import { Sema } from "async-sema";
+import { norm } from 'mathjs';
 
 //dependcies inside
 import patient from "./patient.js";
-import ResourceManager from './ResourcenManager.js';
 import durations, { setIntake, getNextIntake } from "./intakeManager.js";
 import { timeConsumptionArray } from './timeConsumptionData.js';
-import { norm } from 'mathjs';
-import { log } from "console";
+import SystemState from "./systemState.js";
+
 
 /* ToDos:
-    - Genric/Outsource gets treatment to the cpee
-    - Generic Timefactor
-    - Generic timeConsumptionData
+    - Genric/Outsource getsTreatment to the cpee
+    - 
+    - Generic timeConsumptionData 
 
+    - System State (Which Patient at which task or at queue) (alle roles abchecken)
+    - if patient with an ID and Date then wait till Date(time) occurs ??
+   
+    - simulated annealing   - extracting Fit-Value Function as stand alone function  
+    - diagnosis of Emergency Patient only known after EM-Treatment (what happens when it's empty?) 
+    
 */
 
 const app = express();
-const port = 12793;
+const port = 12792;
 
 //Erstellung eines Array für Customer Id + TestCustomer 
 var patientArray = [];
 patientArray.push(new patient(0, "true"));
 var counterId = 1;
-const timeFactor = 60 * 60 * 1000;
+
+const sysState = new SystemState();
+const timeFactor = /* 60 * 60 * */ 1000;
 const mutex = new Mutex();
 var beforeNurSur = 0;
 
@@ -63,12 +71,12 @@ function findDiagnosisData(diagnosis) {
 // Erstellung einer neuen ID für Patient
 function createId(em) {
     patientArray.push(new patient(counterId, em, 0));
-    console.log("IdCounter: " + counterId);
+    /* console.log("IdCounter: " + counterId); */
 }
 
 function checkComplication(probability) {
     const randomValue = Math.random() * 1000;
-    console.log("Probability " + probability + " || RandomValue " + randomValue);
+    /* console.log("Probability " + probability + " || RandomValue " + randomValue); */
     return (randomValue <= probability) == true;
 }
 
@@ -110,7 +118,7 @@ app.post("/startHospital", async (req, res) => {
 
 app.post("/role", async (req, res) => {
     const role = req.body.role
-    console.log("Role: " + role);
+    console.log("Role: " + role + "--------------");
     // Überprüfen, welcher Name empfangen wurde und entsprechende Funktion aufrufen
     if (role == 'admitPatient') {
         admitPatient(req, res);
@@ -133,15 +141,13 @@ app.post("/role", async (req, res) => {
     }
 });
 
-async function setRes(req, res) {
-    res.send({ "released": true });
-    beforeNurSur--;
-    console.log("Infront of Surg/Nurs Minus: " + beforeNurSur);
-};
 
 async function release(req, res) {
-    res.send({ "released": true });
+    const patientId = req.body["patientId"];
+    sysState.deleteOfSystemState("admitted", patientId);
+    sysState.setSystemState("release", patientArray[patientId]);
     beforeNurSur--;
+    res.send({ "released": true });
     console.log("Infront of Surg/Nurs Minus: " + beforeNurSur);
 };
 
@@ -150,12 +156,14 @@ async function replan(req, res) {
     console.log("CreateInstance");
     const patientId = req.body["patientId"];
     const diagnosis = req.body['diagnosis'];
+    const nextIntake = getNextIntake();
     /* patientArray[patientId].admissionTime = 0; */
+
     console.log("patientId " + patientId +
-        " diagnosis " + diagnosis);
+        " diagnosis " + diagnosis + " nextAvailableTime " + nextIntake);
     /*  console.log(" admissionTime " + patientArray[patientId].admissionTime); */
 
-    const initData = { patientId: patientId, diagnosis: diagnosis, admissionTime: 0, nextAvailableTime: getNextIntake() };
+    const initData = { patientId: patientId, diagnosis: diagnosis, admissionTime: 0, nextAvailableTime: nextIntake };
     const url = 'https://cpee.org/flow/start/url/';
     const data = {
         behavior: 'fork_running',
@@ -169,6 +177,13 @@ async function replan(req, res) {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
         });
+
+        if (patientArray[patientId].replanCounter >= 1) {
+            patientArray[patientId].replanCounter = patientArray[patientId].replanCounter + 1;
+        }else{
+            patientArray[patientId].replanCounter = 1;
+        }
+
         console.log('Response:', response.data);
         res.send({ "newInstanceCreated": true });
     } catch (error) {
@@ -180,19 +195,18 @@ async function replan(req, res) {
 //_________________End Replan__________________________________________________________
 
 async function operation(req, res) {
-    console.log("Operation " + + req.body["patientId"] + " " + req.body['diagnosis']);
+    console.log("Operation " + req.body["patientId"] + " " + req.body['diagnosis']);
     const patientId = req.body["patientId"];
     const diagnosis = req.body['diagnosis'];
     const admissionTime = findDiagnosisData(diagnosis).timeOperation;
     const sema = new Sema(resources.surgery);
-    console.log("OperatingTime " + (findDiagnosisData(diagnosis).timeOperation * timeFactor));
 
     if (checkPatientExists(patientId)) {
         if (!patientArray[patientId].admissionTime) {
             patientArray[patientId].admissionTime = 0;
         }
         await sema.acquire();
-        console.log("Starting Operating");
+        console.log("Starting Operating ID: " + patientId + " Time " + admissionTime * timeFactor);
         await delay(admissionTime * timeFactor);
         patientArray[patientId].diagnosis = diagnosis;
         patientArray[patientId].admissionTime += admissionTime;
@@ -213,18 +227,16 @@ async function nursing(req, res) {
     const complication = checkComplication(findDiagnosisData(diagnosis).probability);
     const sema = new Sema(resources.nurse_A);
 
-    console.log("NursingTime " + (findDiagnosisData(diagnosis).timeNursing * timeFactor));
     if (checkPatientExists(patientId)) {
         if (!patientArray[patientId].admissionTime) {
             patientArray[patientId].admissionTime = 0;
         }
         await sema.acquire();
-        console.log("Starting nursing");
+        console.log("Starting nursing ID: " + patientId + " Time " + admissionTime * timeFactor);
         await delay(admissionTime * timeFactor);
         patientArray[patientId].diagnosis = diagnosis;
         patientArray[patientId].admissionTime += admissionTime;
-        console.log("Comlplication : " + complication);
-        console.log("Ending nursing" + "\n" + "------------------");
+        console.log("Ending nursing, Comlplication : " + complication + "\n" + "------------------");
         res.send({ "admissionTime": patientArray[patientId].admissionTime, "complication": complication });
         sema.release();
     } else {
@@ -239,12 +251,11 @@ async function emTreatment(req, res) {
     const patientId = req.body["patientId"];
     const admissionTime = norm([2, 0.5]);
 
-    console.log("EM-Treatment " + admissionTime * timeFactor);
     if (checkPatientExists(patientId)) {
         if (!patientArray[patientId].admissionTime) {
             patientArray[patientId].admissionTime = 0;
         }
-        console.log("Starting EM-Treatment");
+        console.log("Starting EM-Treatment ID: " + patientId + " Time " + admissionTime * timeFactor);
         await delay(admissionTime * timeFactor);
         patientArray[patientId].admissionTime += admissionTime;
         console.log("Ending EM-Treatment" + "\n" + "------------------");
@@ -262,12 +273,11 @@ async function intake(req, res) {
     const patientId = req.body["patientId"];
     const admissionTime = norm([1, 0.125]);
 
-    console.log("EM-Treatment Time: " + admissionTime * timeFactor);
     if (checkPatientExists(patientId)) {
         if (!patientArray[patientId].admissionTime) {
             patientArray[patientId].admissionTime = 0;
         }
-        console.log("Starting Intake");
+        console.log("Starting Intake ID: " + patientId + " Time " + admissionTime * timeFactor);
         await delay(admissionTime * timeFactor);
         patientArray[patientId].admissionTime += admissionTime;
         console.log("Ending Intake" + "\n" + "------------------");
@@ -287,38 +297,39 @@ async function admitPatient(req, res) {
     const em = req.body["em"];
     console.log(req.body);
 
-    if(req.body.setReources){
-       resources = req.body.resources
-       timeFactor = req.timeFactor;
-       res.send(200);
+    if (req.body.setReources) {
+        resources = req.body.resources
+        timeFactor = req.timeFactor;
+        res.send(200);
     }
     else if (checkPatientExists(checkedId)) {
         if (em == "true") { //Has ID and Emergency goes to EM
+            sysState.setSystemState("admitted", patientArray[checkedId])
             res.send({
                 "patientId": checkedId, "getsTreatment": true,
                 "admissionTime": patientArray[checkedId].admissionTime
             });
         } else {
-            const resourceName = 0;
             const release = await mutex.acquire(); //Max nur 1 Thread wegen counter and check
 
-            console.log(durations[0]);
-            if (resources.intake > 0 || beforeNurSur <= 2) {//Has ID goes to Intake
+            console.log("resources.intake " + resources.intake);
+            if (resources.intake > 0 && beforeNurSur <= 2) {//Has ID goes to Intake
                 resources.intake--;
                 release();
                 setIntake(norm([1, 0.125]) * timeFactor);
-                console.log("Has ID & gets Treatment");
 
+                console.log("Has ID & gets Treatment");
+                sysState.setSystemState("admitted", patientArray[checkedId])
                 res.send({
                     "patientId": checkedId,
                     "em": em, "getsTreatment": true,
                     "admissionTime": patientArray[checkedId].admissionTime
                 });
             }
-            else {
+            else {//Goes Home
                 release();
-                console.log("Has ID & gets NO Treatment"); //Goes Home
-                res.send({ "patientId": checkedId, "getsTreatment": false, "nextAvailableTime": getNextIntake() });
+                console.log("Has ID & gets NO Treatment");
+                res.send({ "patientId": checkedId, "getsTreatment": false });
 
                 /*  res.send({ "patientId": checkedId, "em": em,  "admissionTime": 0 }); */
             }
@@ -329,6 +340,7 @@ async function admitPatient(req, res) {
         console.log("BUT Emergency");
         createId("true");
         const tempPatient = patientArray[counterId++];
+        sysState.setSystemState("admitted", tempPatient)
         res.send({ "patientId": tempPatient.patientId, "em": tempPatient.em, "getsTreatment": true, "admissionTime": tempPatient.admissionTime });
     } else {    //Goes home with new id
         console.log("Tomorrow");
@@ -342,4 +354,5 @@ async function admitPatient(req, res) {
 
 app.listen(port, '::', () => {
     console.log(`Server is running on http://0.0.0.0::${port}`);
+    console.log("---------------------------------------------------------------------------------------------");
 });

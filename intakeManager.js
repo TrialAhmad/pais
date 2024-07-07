@@ -1,51 +1,33 @@
 import { log } from "mathjs";
 
 const durations = [];
-
-/* function intakeManager(duration) {
-    duration = duration + 1;
-
-    const hours = new Date().getHours() + duration + ":00";
-    const day = new Date().getDate();
-    const month = new Date().getMonth() + 1;
-    const finalDate = new Date('2024 ' + month + ' ' + day + ',' + hours);
-
-    durations.push(finalDate);
-    durations.push(new Date('2035 ' + month + ' ' + day + ',' + hours));
-
-    console.log(durations[0]);
-    const x = durations.splice(0, 1);
-
-    console.log(hours);
-    console.log(day);
-    console.log(month);
-    console.log(durations[0]);
-} */
+const appointments = [];
 
 function setIntake(duration) {
-    const dur = 2;
-    /* const hours = new Date().getHours() + duration + ":00";
-    const day = new Date().getDate();
-    const month = new Date().getMonth() + 1;
-    const finalDate = new Date('2024 ' + month + ' ' + day + ',' + hours); */
-     const now = new Date();
-     const newDate = new Date(now.getTime() + dur * 60 * 60 * 1000); // Hinzufügen von 2 Stunden
-     const finalDate = new Date(newDate.getFullYear(), newDate.getMonth(), newDate.getDate(), newDate.getHours(), 0, 0);
- 
-    /* const hours = new Date().getHours() + dur;
-    const day = new Date().getDate();
-    const month = new Date().getMonth();
-    const finalDate = new Date('2024' + month + day + hours); */
+    const dur = 4;
 
-    durations.push(finalDate);
-   /*  console.log(hours); */
-  /*   console.log(day);
-    console.log(month); */
-    console.log(durations[0]);
+    const now = new Date();
+    const fourHoursInMilliseconds = dur * 60 * 60 * 1000;
+    const finalDate = new Date(now.getTime() + fourHoursInMilliseconds);
+    console.log("Zeit in 4 Stunden: " + finalDate);
+
+    durations.push(finalDate.toLocaleString());
+    console.log("durations.length " + durations.length);
+    console.log(finalDate.toLocaleString());
 }
 
 function getNextIntake() {
-    return durations.splice(0, 1);;
+    
+    let temp;
+    if(durations.length < 4){
+        temp = new Date().toLocaleString();
+        
+    }else{temp = durations[durations.length -  4];}
+    console.log("Durations " + durations);
+    console.log("GetNextIntake " + temp);
+    appointments.push(temp);
+    console.log(appointments);
+    return temp;
 }
 
 export { setIntake, getNextIntake }

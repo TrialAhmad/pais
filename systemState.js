@@ -3,10 +3,12 @@ class SystemState {
         this.admitted = [];
         this.replan = [];
         this.intake = [];
+        this.afterIntake = [];
         this.emTreatment = [];
         this.surgery = [];
         this.nursing = [];
         this.release = [];
+        this.appointment = [];
     }
 
     setSystemState(role, patient) {

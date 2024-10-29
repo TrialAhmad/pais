@@ -42,7 +42,7 @@ async function replan(req, res) {
         " admissionTime " + 0);
 
 
-    const initData = { patientId: null, diagnosis: "A2", admissionTime: 0 };
+    const initData = { patientId: null, diagnosis: "A2", admissionTime: 0};
     const url = 'https://cpee.org/flow/start/url/';
     const data = {
         behavior: 'fork_running',

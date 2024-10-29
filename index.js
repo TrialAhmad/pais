@@ -11,13 +11,6 @@ import { timeConsumptionArray } from './timeConsumptionData.js';
 import SystemState from "./systemState.js";
 import AppointmentManager from './annealing.js';
 
-
-/* ToDos:
-
-    - simulated annealing   - extracting Fit-Value Function as stand alone function  
-   
-*/
-
 const app = express();
 const port = 12794;
 

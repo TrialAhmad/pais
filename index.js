@@ -27,7 +27,7 @@ patientArray.push(new patient(0, "true"));
 var counterId = 1;
 
 const sysState = new SystemState();
-const timeFactor = 1000 /* * 60 * 60 */; 
+const timeFactor = 1000 * 60 * 60; 
 const mutex = new Mutex();
 var beforeNurSur = 0;
 const appointmentManager = new AppointmentManager(); // Instanz des AppointmentManagers erstellen
